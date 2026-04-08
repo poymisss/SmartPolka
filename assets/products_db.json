@@ -1,0 +1,431 @@
+{
+    "products": [
+        {
+            "barcode": "4601234567890",
+            "name": "Молоко 3.2%",
+            "category": "Молочка",
+            "icon": "milk",
+            "defaultDays": 7
+        },
+        {
+            "barcode": "4601234567891",
+            "name": "Йогурт греческий",
+            "category": "Молочка",
+            "icon": "yogurt",
+            "defaultDays": 14
+        },
+        {
+            "barcode": "4601234567892",
+            "name": "Сыр твердый",
+            "category": "Молочка",
+            "icon": "cheese",
+            "defaultDays": 30
+        },
+        {
+            "barcode": "4601234567893",
+            "name": "Творог 9%",
+            "category": "Молочка",
+            "icon": "cottage",
+            "defaultDays": 10
+        },
+        {
+            "barcode": "4601234567894",
+            "name": "Сметана 20%",
+            "category": "Молочка",
+            "icon": "sour",
+            "defaultDays": 14
+        },
+        {
+            "barcode": "4601234567895",
+            "name": "Кефир",
+            "category": "Молочка",
+            "icon": "kefir",
+            "defaultDays": 10
+        },
+        {
+            "barcode": "4601234567896",
+            "name": "Яйца куриные",
+            "category": "Яйца",
+            "icon": "egg",
+            "defaultDays": 21
+        },
+        {
+            "barcode": "4601234567897",
+            "name": "Яйца перепелиные",
+            "category": "Яйца",
+            "icon": "egg",
+            "defaultDays": 30
+        },
+        {
+            "barcode": "4601234567898",
+            "name": "Хлеб белый",
+            "category": "Хлеб",
+            "icon": "bread",
+            "defaultDays": 3
+        },
+        {
+            "barcode": "4601234567899",
+            "name": "Хлеб ржаной",
+            "category": "Хлеб",
+            "icon": "bread",
+            "defaultDays": 5
+        },
+        {
+            "barcode": "4601234567900",
+            "name": "Багет",
+            "category": "Хлеб",
+            "icon": "baguette",
+            "defaultDays": 2
+        },
+        {
+            "barcode": "4601234567901",
+            "name": "Курица филе",
+            "category": "Мясо",
+            "icon": "chicken",
+            "defaultDays": 3
+        },
+        {
+            "barcode": "4601234567902",
+            "name": "Говядина",
+            "category": "Мясо",
+            "icon": "meat",
+            "defaultDays": 5
+        },
+        {
+            "barcode": "4601234567903",
+            "name": "Свинина",
+            "category": "Мясо",
+            "icon": "meat",
+            "defaultDays": 5
+        },
+        {
+            "barcode": "4601234567904",
+            "name": "Фарш говяжий",
+            "category": "Мясо",
+            "icon": "mince",
+            "defaultDays": 2
+        },
+        {
+            "barcode": "4601234567905",
+            "name": "Сосиски",
+            "category": "Мясо",
+            "icon": "sausage",
+            "defaultDays": 10
+        },
+        {
+            "barcode": "4601234567906",
+            "name": "Колбаса вареная",
+            "category": "Мясо",
+            "icon": "sausage",
+            "defaultDays": 14
+        },
+        {
+            "barcode": "4601234567907",
+            "name": "Лосось",
+            "category": "Рыба",
+            "icon": "fish",
+            "defaultDays": 2
+        },
+        {
+            "barcode": "4601234567908",
+            "name": "Тунец",
+            "category": "Рыба",
+            "icon": "fish",
+            "defaultDays": 3
+        },
+        {
+            "barcode": "4601234567909",
+            "name": "Креветки",
+            "category": "Рыба",
+            "icon": "shrimp",
+            "defaultDays": 2
+        },
+        {
+            "barcode": "4601234567910",
+            "name": "Яблоки",
+            "category": "Фрукты",
+            "icon": "apple",
+            "defaultDays": 14
+        },
+        {
+            "barcode": "4601234567911",
+            "name": "Бананы",
+            "category": "Фрукты",
+            "icon": "banana",
+            "defaultDays": 7
+        },
+        {
+            "barcode": "4601234567912",
+            "name": "Апельсины",
+            "category": "Фрукты",
+            "icon": "orange",
+            "defaultDays": 21
+        },
+        {
+            "barcode": "4601234567913",
+            "name": "Виноград",
+            "category": "Фрукты",
+            "icon": "grape",
+            "defaultDays": 10
+        },
+        {
+            "barcode": "4601234567914",
+            "name": "Помидоры",
+            "category": "Овощи",
+            "icon": "tomato",
+            "defaultDays": 10
+        },
+        {
+            "barcode": "4601234567915",
+            "name": "Огурцы",
+            "category": "Овощи",
+            "icon": "cucumber",
+            "defaultDays": 14
+        },
+        {
+            "barcode": "4601234567916",
+            "name": "Перец болгарский",
+            "category": "Овощи",
+            "icon": "pepper",
+            "defaultDays": 14
+        },
+        {
+            "barcode": "4601234567917",
+            "name": "Морковь",
+            "category": "Овощи",
+            "icon": "carrot",
+            "defaultDays": 30
+        },
+        {
+            "barcode": "4601234567918",
+            "name": "Картофель",
+            "category": "Овощи",
+            "icon": "potato",
+            "defaultDays": 60
+        },
+        {
+            "barcode": "4601234567919",
+            "name": "Лук",
+            "category": "Овощи",
+            "icon": "onion",
+            "defaultDays": 45
+        },
+        {
+            "barcode": "4601234567920",
+            "name": "Шампиньоны",
+            "category": "Грибы",
+            "icon": "mushroom",
+            "defaultDays": 5
+        },
+        {
+            "barcode": "4601234567921",
+            "name": "Масло сливочное",
+            "category": "Молочка",
+            "icon": "butter",
+            "defaultDays": 30
+        },
+        {
+            "barcode": "4601234567922",
+            "name": "Майонез",
+            "category": "Соусы",
+            "icon": "sauce",
+            "defaultDays": 90
+        },
+        {
+            "barcode": "4601234567923",
+            "name": "Кетчуп",
+            "category": "Соусы",
+            "icon": "sauce",
+            "defaultDays": 180
+        },
+        {
+            "barcode": "4601234567924",
+            "name": "Горчица",
+            "category": "Соусы",
+            "icon": "sauce",
+            "defaultDays": 365
+        },
+        {
+            "barcode": "4601234567925",
+            "name": "Пиво",
+            "category": "Алкоголь",
+            "icon": "beer",
+            "defaultDays": 180
+        },
+        {
+            "barcode": "4601234567926",
+            "name": "Вино красное",
+            "category": "Алкоголь",
+            "icon": "wine",
+            "defaultDays": 365
+        },
+        {
+            "barcode": "4601234567927",
+            "name": "Водка",
+            "category": "Алкоголь",
+            "icon": "vodka",
+            "defaultDays": 1825
+        },
+        {
+            "barcode": "4601234567928",
+            "name": "Сок апельсиновый",
+            "category": "Напитки",
+            "icon": "juice",
+            "defaultDays": 30
+        },
+        {
+            "barcode": "4601234567929",
+            "name": "Вода минеральная",
+            "category": "Напитки",
+            "icon": "water",
+            "defaultDays": 365
+        },
+        {
+            "barcode": "4601234567930",
+            "name": "Шоколад",
+            "category": "Сладости",
+            "icon": "chocolate",
+            "defaultDays": 180
+        },
+        {
+            "barcode": "4601234567931",
+            "name": "Печенье",
+            "category": "Сладости",
+            "icon": "cookie",
+            "defaultDays": 90
+        },
+        {
+            "barcode": "4601234567932",
+            "name": "Мороженое",
+            "category": "Сладости",
+            "icon": "icecream",
+            "defaultDays": 180
+        },
+        {
+            "barcode": "4601234567933",
+            "name": "Мед",
+            "category": "Сладости",
+            "icon": "honey",
+            "defaultDays": 730
+        },
+        {
+            "barcode": "4601234567934",
+            "name": "Варенье",
+            "category": "Сладости",
+            "icon": "jam",
+            "defaultDays": 365
+        },
+        {
+            "barcode": "4601234567935",
+            "name": "Макароны",
+            "category": "Крупы",
+            "icon": "pasta",
+            "defaultDays": 730
+        },
+        {
+            "barcode": "4601234567936",
+            "name": "Рис",
+            "category": "Крупы",
+            "icon": "rice",
+            "defaultDays": 730
+        },
+        {
+            "barcode": "4601234567937",
+            "name": "Гречка",
+            "category": "Крупы",
+            "icon": "buckwheat",
+            "defaultDays": 730
+        },
+        {
+            "barcode": "4601234567938",
+            "name": "Овсянка",
+            "category": "Крупы",
+            "icon": "oat",
+            "defaultDays": 365
+        },
+        {
+            "barcode": "4601234567939",
+            "name": "Мука",
+            "category": "Крупы",
+            "icon": "flour",
+            "defaultDays": 180
+        },
+        {
+            "barcode": "4601234567940",
+            "name": "Сахар",
+            "category": "Крупы",
+            "icon": "sugar",
+            "defaultDays": 1825
+        },
+        {
+            "barcode": "4601234567941",
+            "name": "Соль",
+            "category": "Крупы",
+            "icon": "salt",
+            "defaultDays": 1825
+        },
+        {
+            "barcode": "4601234567942",
+            "name": "Подсолнечное масло",
+            "category": "Масла",
+            "icon": "oil",
+            "defaultDays": 365
+        },
+        {
+            "barcode": "4601234567943",
+            "name": "Оливковое масло",
+            "category": "Масла",
+            "icon": "oil",
+            "defaultDays": 730
+        },
+        {
+            "barcode": "4601234567944",
+            "name": "Консервы рыбные",
+            "category": "Консервы",
+            "icon": "can",
+            "defaultDays": 730
+        },
+        {
+            "barcode": "4601234567945",
+            "name": "Горошек консервированный",
+            "category": "Консервы",
+            "icon": "can",
+            "defaultDays": 730
+        },
+        {
+            "barcode": "4601234567946",
+            "name": "Кукуруза консервированная",
+            "category": "Консервы",
+            "icon": "can",
+            "defaultDays": 730
+        },
+        {
+            "barcode": "4601234567947",
+            "name": "Тушенка",
+            "category": "Консервы",
+            "icon": "can",
+            "defaultDays": 1095
+        },
+        {
+            "barcode": "4601234567948",
+            "name": "Детское питание",
+            "category": "Детское",
+            "icon": "baby",
+            "defaultDays": 365
+        },
+        {
+            "barcode": "4601234567949",
+            "name": "Пюре фруктовое",
+            "category": "Детское",
+            "icon": "baby",
+            "defaultDays": 180
+        },
+        {
+            "barcode": "4601234567950",
+            "name": "Смесь молочная",
+            "category": "Детское",
+            "icon": "baby",
+            "defaultDays": 540
+        }
+    ]
+}
