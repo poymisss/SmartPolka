@@ -21,8 +21,16 @@ import 'package:timezone/timezone.dart' as tz;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  await NotificationService().init();
-  tz.initializeTimeZones();
+  try {
+    await NotificationService().init();
+  } catch (e) {
+    debugPrint('Notifications error: $e');
+  }
+  try {
+    tz.initializeTimeZones();
+  } catch (e) {
+    debugPrint('Timezone error: $e');
+  }
   runApp(const SmartShelfApp());
 }
 
@@ -35,8 +43,9 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
 
   Future<void> init() async {
+    try {
     const AndroidInitializationSettings androidSettings = 
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('ic_launcher');
     const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
       requestSoundPermission: true,
       requestBadgePermission: true,
@@ -47,6 +56,9 @@ class NotificationService {
       iOS: iosSettings,
     );
     await _notifications.initialize(settings);
+    } catch (e) {
+      debugPrint('Notification init failed: $e');
+    }
   }
 
   Future<void> scheduleExpiryNotification(Product product) async {
