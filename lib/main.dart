@@ -77,8 +77,6 @@ class NotificationService {
         ),
       ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: 
-          UILocalNotificationDateInterpretation.absoluteTime,
     );
   }
 
