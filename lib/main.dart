@@ -200,7 +200,7 @@ final Map<String, ProductCategory> categories = {
   'Алкоголь': ProductCategory('Алкоголь', Icons.wine_bar, Color(0xFF7C3AED), 365),
   'Консервы': ProductCategory('Консервы', Icons.inventory_2, Color(0xFF6B7280), 730),
   'Крупы': ProductCategory('Крупы', Icons.grain, Color(0xFFF59E0B), 365),
-  'Соусы': ProductCategory('Соусы', Icons.saucepan, Color(0xFFEC4899), 90),
+  'Соусы': ProductCategory('Соусы', Icons.local_dining, Color(0xFFEC4899), 90),
   'Масла': ProductCategory('Масла', Icons.opacity, Color(0xFFFBBF24), 365),
   'Детское': ProductCategory('Детское', Icons.child_care, Color(0xFF8B5CF6), 180),
   'Другое': ProductCategory('Другое', Icons.kitchen, Color(0xFF9CA3AF), 7),
@@ -1304,7 +1304,7 @@ class _HomeScreenState extends State<HomeScreen>
         _buildStatCard(
           'Всего',
           stats['total'].toString(),
-          isDark ? Colors.white : const Color(0xFF1E293B),
+          Theme.of(context).brightness == Brightness.dark ? Colors.white : const Color(0xFF1E293B),
           Icons.kitchen,
         ),
         const SizedBox(width: 12),
@@ -1397,11 +1397,11 @@ class _HomeScreenState extends State<HomeScreen>
         },
         decoration: InputDecoration(
           hintText: 'Поиск продуктов...',
-          hintStyle: TextStyle(color: Colors.grey.sh500),
-          prefixIcon: Icon(Icons.search, color: Colors.grey.sh500),
+          hintStyle: TextStyle(color: Color(0xFF9E9E9E)),
+          prefixIcon: Icon(Icons.search, color: Color(0xFF9E9E9E)),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: Icon(Icons.clear, color: Colors.grey.sh500),
+                  icon: Icon(Icons.clear, color: Color(0xFF9E9E9E)),
                   onPressed: () {
                     _searchCtrl.clear();
                     setState(() => _searchQuery = '');
@@ -1476,7 +1476,7 @@ class _HomeScreenState extends State<HomeScreen>
           Text(
             'Добавьте первый продукт',
             style: TextStyle(
-              color: isDark ? Colors.white20 : Colors.black12,
+              color: isDark ? Colors.white.withOpacity(0.2) : Colors.black12,
               fontSize: 14,
             ),
           ),
