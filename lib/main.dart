@@ -14,16 +14,81 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  await NotificationService().init();
+  tz.initializeTimeZones();
   runApp(const SmartShelfApp());
+}
+
+// ==================== СЕРВИС УВЕДОМЛЕНИЙ ====================
+class NotificationService {
+  static final NotificationService _instance = NotificationService._internal();
+  factory NotificationService() => _instance;
+  NotificationService._internal();
+
+  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+
+  Future<void> init() async {
+    const AndroidInitializationSettings androidSettings = 
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
+      requestSoundPermission: true,
+      requestBadgePermission: true,
+      requestAlertPermission: true,
+    );
+    const InitializationSettings settings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+    await _notifications.initialize(settings);
+  }
+
+  Future<void> scheduleExpiryNotification(Product product) async {
+    final expiryDate = product.expiryDate;
+    final notifyDate = expiryDate.subtract(const Duration(days: 1));
+    
+    if (notifyDate.isBefore(DateTime.now())) return;
+
+    final tz.TZDateTime scheduledDate = tz.TZDateTime.from(notifyDate, tz.local);
+
+    await _notifications.zonedSchedule(
+      product.id.hashCode,
+      'Срок годности истекает!',
+      '${product.name} испортится завтра',
+      scheduledDate,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'expiry_channel',
+          'Сроки годности',
+          channelDescription: 'Уведомления о скором испорченности продуктов',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: 
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  Future<void> cancelNotification(String productId) async {
+    await _notifications.cancel(productId.hashCode);
+  }
 }
 
 // ==================== ТЕМЫ И СТИЛИ ====================
 class AppTheme {
-  // Основные цвета
   static const Color primary = Color(0xFF6366F1);
   static const Color primaryLight = Color(0xFF818CF8);
   static const Color secondary = Color(0xFF14B8A6);
@@ -33,7 +98,6 @@ class AppTheme {
   static const Color warning = Color(0xFFF97316);
   static const Color info = Color(0xFF3B82F6);
   
-  // Фоны
   static const Color darkBg = Color(0xFF0F172A);
   static const Color darkCard = Color(0xFF1E293B);
   static const Color darkSurface = Color(0xFF334155);
@@ -109,7 +173,7 @@ class Product {
   bool get isFresh => daysLeft > 7;
 
   Color get statusColor {
-    if (isExpired) return AppTheme.danger;
+    if (isExpired || isExpiringToday) return AppTheme.danger;
     if (isExpiringSoon) return AppTheme.warning;
     if (isExpiringThisWeek) return AppTheme.accent;
     return AppTheme.success;
@@ -209,12 +273,23 @@ final Map<String, ProductCategory> categories = {
 // ==================== СЕРВИС ДАННЫХ ====================
 class ProductService {
   static const String _key = 'products_v2';
+  static const String _firstLaunchKey = 'first_launch_completed';
   static final ProductService _instance = ProductService._internal();
   factory ProductService() => _instance;
   ProductService._internal();
 
   List<Product> _products = [];
   List<Product> get products => List.unmodifiable(_products);
+
+  Future<bool> isFirstLaunch() async {
+    final prefs = await SharedPreferences.getInstance();
+    return !(prefs.getBool(_firstLaunchKey) ?? false);
+  }
+
+  Future<void> setFirstLaunchComplete() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_firstLaunchKey, true);
+  }
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -239,6 +314,15 @@ class ProductService {
   Future<void> add(Product product) async {
     _products.add(product);
     await save();
+    await NotificationService().scheduleExpiryNotification(product);
+  }
+
+  Future<void> addMultiple(List<Product> products) async {
+    _products.addAll(products);
+    await save();
+    for (var p in products) {
+      await NotificationService().scheduleExpiryNotification(p);
+    }
   }
 
   Future<void> update(Product product) async {
@@ -246,21 +330,32 @@ class ProductService {
     if (index != -1) {
       _products[index] = product;
       await save();
+      await NotificationService().cancelNotification(product.id);
+      await NotificationService().scheduleExpiryNotification(product);
     }
   }
 
   Future<void> delete(String id) async {
     _products.removeWhere((p) => p.id == id);
     await save();
+    await NotificationService().cancelNotification(id);
   }
 
   Future<void> toggleUsed(String id) async {
     final product = _products.firstWhere((p) => p.id == id);
     product.isUsed = !product.isUsed;
     await save();
+    if (product.isUsed) {
+      await NotificationService().cancelNotification(id);
+    } else {
+      await NotificationService().scheduleExpiryNotification(product);
+    }
   }
 
   Future<void> clearAll() async {
+    for (var p in _products) {
+      await NotificationService().cancelNotification(p.id);
+    }
     _products.clear();
     await save();
   }
@@ -312,6 +407,61 @@ class ProductService {
     final list = jsonDecode(json) as List;
     _products = list.map((e) => Product.fromJson(e)).toList();
     await save();
+    for (var p in _products) {
+      await NotificationService().scheduleExpiryNotification(p);
+    }
+  }
+}
+
+// ==================== ПАРСЕР ЧЕСТНОГО ЗНАКА ====================
+class HonestSignParser {
+  // Парсит Data Matrix код Честного ЗНАКА
+  // Формат: GS1 Data Matrix с идентификаторами применения
+  static DateTime? parseExpiryDate(String barcode) {
+    try {
+      // Ищем AI (01) - GTIN и (17) - срок годности YYMMDD
+      // Пример: 01046012345678902123456717250331...
+      // 01 = GTIN (14 цифр)
+      // 17 = Срок годности YYMMDD (6 цифр)
+      
+      String? expiryStr;
+      
+      // Ищем маркер 17 (срок годности)
+      final expIndex = barcode.indexOf('17');
+      if (expIndex != -1 && expIndex + 8 <= barcode.length) {
+        expiryStr = barcode.substring(expIndex + 2, expIndex + 8);
+      }
+      
+      // Альтернативный формат: просто 6 цифр подряд после GTIN
+      if (expiryStr == null && barcode.length >= 20) {
+        // Пробуем найти дату в формате YYMMDD
+        final datePattern = RegExp(r'(20\d{2})(\d{2})(\d{2})');
+        final match = datePattern.firstMatch(barcode);
+        if (match != null) {
+          final year = int.parse(match.group(1)!);
+          final month = int.parse(match.group(2)!);
+          final day = int.parse(match.group(3)!);
+          return DateTime(year, month, day);
+        }
+      }
+      
+      if (expiryStr != null && expiryStr.length == 6) {
+        final year = 2000 + int.parse(expiryStr.substring(0, 2));
+        final month = int.parse(expiryStr.substring(2, 4));
+        final day = int.parse(expiryStr.substring(4, 6));
+        return DateTime(year, month, day);
+      }
+      
+      return null;
+    } catch (e) {
+      debugPrint('Error parsing Honest Sign: $e');
+      return null;
+    }
+  }
+  
+  static String? extractProductName(String barcode) {
+    // Пытаемся извлечь название из базы или возвращаем null
+    return null;
   }
 }
 
@@ -359,6 +509,7 @@ class SmartShelfApp extends StatefulWidget {
 class _SmartShelfAppState extends State<SmartShelfApp> {
   bool isDark = true;
   bool isLoading = true;
+  bool isFirstLaunch = false;
 
   @override
   void initState() {
@@ -370,6 +521,7 @@ class _SmartShelfAppState extends State<SmartShelfApp> {
     await ProductDatabase.load();
     await ProductService().load();
     final prefs = await SharedPreferences.getInstance();
+    isFirstLaunch = await ProductService().isFirstLaunch();
     setState(() {
       isDark = prefs.getBool('isDark') ?? true;
       isLoading = false;
@@ -402,24 +554,35 @@ class _SmartShelfAppState extends State<SmartShelfApp> {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: AppTheme.getTheme(isDark),
-        home: OnboardingScreen(
-          onThemeToggle: toggleTheme,
-          isDark: isDark,
-        ),
+        home: isFirstLaunch 
+          ? OnboardingScreen(
+              onThemeToggle: toggleTheme,
+              isDark: isDark,
+              onComplete: () async {
+                await ProductService().setFirstLaunchComplete();
+                setState(() => isFirstLaunch = false);
+              },
+            )
+          : HomeScreen(
+              onThemeToggle: toggleTheme,
+              isDark: isDark,
+            ),
       ),
     );
   }
 }
 
-// ==================== ОНБОРДИНГ ====================
+// ==================== ОНБОРДИНГ (ТОЛЬКО ПЕРВЫЙ РАЗ) ====================
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onThemeToggle;
   final bool isDark;
+  final VoidCallback onComplete;
 
   const OnboardingScreen({
     super.key,
     required this.onThemeToggle,
     required this.isDark,
+    required this.onComplete,
   });
 
   @override
@@ -434,9 +597,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   final List<Map<String, dynamic>> _pages = [
     {
-      'title': 'Привет! Я Фриджи!',
-      'subtitle': 'Твой умный помощник на кухне',
-      'icon': Icons.waving_hand,
+      'title': 'СмартПолка',
+      'subtitle': 'Умный трекер сроков годности',
+      'icon': Icons.kitchen,
     },
     {
       'title': 'Следи за сроками',
@@ -444,13 +607,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       'icon': Icons.timer,
     },
     {
-      'title': 'Сканируй штрихкоды',
-      'subtitle': 'Быстрое добавление продуктов',
+      'title': 'Сканируй Честный ЗНАК',
+      'subtitle': 'Точный срок из Data Matrix',
       'icon': Icons.qr_code_scanner,
     },
     {
       'title': 'Голосовой ввод',
-      'subtitle': 'Скажи "Молоко 5 дней"',
+      'subtitle': 'Скажи "Молоко 5 дней, Хлеб 3 дня"',
       'icon': Icons.mic,
     },
   ];
@@ -471,22 +634,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         curve: Curves.easeInOut,
       );
     } else {
-      _goHome();
+      widget.onComplete();
     }
-  }
-
-  void _goHome() {
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => HomeScreen(
-          onThemeToggle: widget.onThemeToggle,
-          isDark: widget.isDark,
-        ),
-        transitionsBuilder: (_, a, __, c) => FadeTransition(opacity: a, child: c),
-        transitionDuration: const Duration(milliseconds: 600),
-      ),
-    );
   }
 
   @override
@@ -508,7 +657,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           child: Column(
             children: [
               const Spacer(),
-              _buildMascot(),
+              // Минималистичный холодильник вместо Фриджи
+              _buildFridge(),
               const SizedBox(height: 40),
               SizedBox(
                 height: 200,
@@ -557,83 +707,78 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
   }
 
-  Widget _buildMascot() {
+  Widget _buildFridge() {
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (ctx, child) {
-        final bounce = math.sin(_ctrl.value * math.pi * 2) * 0.1 + 1.0;
+        final bounce = math.sin(_ctrl.value * math.pi * 2) * 0.05 + 1.0;
         return Transform.scale(
           scale: bounce,
           child: Container(
-            width: 160,
-            height: 160,
+            width: 140,
+            height: 200,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppTheme.primary, AppTheme.secondary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.grey.shade300,
+                  Colors.grey.shade400,
+                ],
               ),
-              borderRadius: BorderRadius.circular(48),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.grey.shade500, width: 3),
               boxShadow: [
                 BoxShadow(
-                  color: AppTheme.primary.withOpacity(0.4),
-                  blurRadius: 40,
-                  offset: const Offset(0, 20),
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
-            child: Stack(
-              alignment: Alignment.center,
+            child: Column(
               children: [
-                Positioned(top: 45, left: 40, child: _buildEye()),
-                Positioned(top: 45, right: 40, child: _buildEye()),
-                Positioned(
-                  bottom: 40,
+                // Верхняя дверь (морозилка)
+                Expanded(
+                  flex: 1,
                   child: Container(
-                    width: 60,
-                    height: 30,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
-                        bottomLeft: Radius.circular(30),
-                        bottomRight: Radius.circular(30),
-                        topLeft: Radius.circular(8),
-                        topRight: Radius.circular(8),
-                      ),
+                    margin: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade500, width: 2),
                     ),
                     child: Center(
                       child: Container(
                         width: 30,
-                        height: 10,
+                        height: 4,
                         decoration: BoxDecoration(
-                          color: AppTheme.danger.withOpacity(0.3),
-                          borderRadius: BorderRadius.circular(5),
+                          color: Colors.grey.shade600,
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
                   ),
                 ),
-                Positioned(
-                  top: 75,
-                  left: 22,
+                // Нижняя дверь (холодильник)
+                Expanded(
+                  flex: 2,
                   child: Container(
-                    width: 16,
-                    height: 12,
+                    margin: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.pink.withOpacity(0.4),
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.white.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade500, width: 2),
                     ),
-                  ),
-                ),
-                Positioned(
-                  top: 75,
-                  right: 22,
-                  child: Container(
-                    width: 16,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: Colors.pink.withOpacity(0.4),
-                      borderRadius: BorderRadius.circular(8),
+                    child: Center(
+                      child: Container(
+                        width: 30,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade600,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -644,25 +789,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       },
     );
   }
-
-  Widget _buildEye() => Container(
-    width: 22,
-    height: 30,
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(11),
-    ),
-    child: Center(
-      child: Container(
-        width: 10,
-        height: 16,
-        decoration: BoxDecoration(
-          color: AppTheme.darkBg,
-          borderRadius: BorderRadius.circular(5),
-        ),
-      ),
-    ),
-  );
 
   Widget _buildPage(int index) {
     final page = _pages[index];
@@ -853,7 +979,7 @@ class _HomeScreenState extends State<HomeScreen>
             _buildAddOption(
               Icons.mic,
               'Голосом',
-              'Скажи: "Молоко 5 дней"',
+              'Скажи: "Молоко 5 дней, Хлеб 3 дня"',
               AppTheme.warning,
               () {
                 Navigator.pop(ctx);
@@ -862,12 +988,12 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             _buildAddOption(
               Icons.qr_code_scanner,
-              'Сканировать',
-              'Сканер штрихкода',
+              'Честный ЗНАК',
+              'Сканировать Data Matrix',
               AppTheme.accent,
               () {
                 Navigator.pop(ctx);
-                _showScanner();
+                _showHonestSignScanner();
               },
             ),
             _buildAddOption(
@@ -927,7 +1053,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ==================== ГОЛОСОВОЙ ВВОД ====================
+  // ==================== ГОЛОСОВОЙ ВВОД С РАЗДЕЛЕНИЕМ ====================
   void _showVoiceInput() async {
     final status = await Permission.microphone.request();
     if (!status.isGranted) {
@@ -940,95 +1066,44 @@ class _HomeScreenState extends State<HomeScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => VoiceInputSheet(
-        onResult: (name, days) {
+        onResult: (products) {
           Navigator.pop(ctx);
-          _showVoiceConfirm(name, days);
+          _showVoiceConfirmList(products);
         },
       ),
     );
   }
 
-  void _showVoiceConfirm(String name, int days) {
+  void _showVoiceConfirmList(List<Map<String, dynamic>> products) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardTheme.color,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildHandle(),
-            const SizedBox(height: 24),
-            const Icon(Icons.mic, size: 48, color: AppTheme.primary),
-            const SizedBox(height: 16),
-            Text('Распознано:', style: TextStyle(color: Colors.grey.shade500)),
-            const SizedBox(height: 8),
-            Text(
-              name,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            Text(
-              '$days ${days == 1 ? 'день' : days < 5 ? 'дня' : 'дней'}',
-              style: const TextStyle(fontSize: 18, color: AppTheme.primary),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: const Text('Отмена'),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final category = _detectCategory(name);
-                      final product = Product(
-                        id: DateTime.now().millisecondsSinceEpoch.toString(),
-                        name: name,
-                        expiryDate: DateTime.now().add(Duration(days: days)),
-                        category: category.name,
-                        iconName: category.name.toLowerCase(),
-                        addedDate: DateTime.now(),
-                      );
-                      await _service.add(product);
-                      _filterProducts();
-                      Navigator.pop(ctx);
-                      _showSnack('Добавлено: $name', AppTheme.success);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: const Text(
-                      'ДОБАВИТЬ',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
+      builder: (ctx) => VoiceConfirmSheet(
+        products: products,
+        onConfirm: (confirmed) async {
+          final productsToAdd = confirmed.map((p) {
+            final category = _detectCategory(p['name']);
+            return Product(
+              id: DateTime.now().millisecondsSinceEpoch.toString() + p['name'],
+              name: p['name'],
+              expiryDate: DateTime.now().add(Duration(days: p['days'])),
+              category: category.name,
+              iconName: category.name.toLowerCase(),
+              addedDate: DateTime.now(),
+            );
+          }).toList();
+          
+          await _service.addMultiple(productsToAdd);
+          _filterProducts();
+          Navigator.pop(ctx);
+          _showSnack('Добавлено ${productsToAdd.length} продуктов', AppTheme.success);
+        },
+        onAddMore: () {
+          // Продолжаем добавлять голосом
+          Navigator.pop(ctx);
+          _showVoiceInput();
+        },
       ),
     );
   }
@@ -1044,8 +1119,8 @@ class _HomeScreenState extends State<HomeScreen>
     return categories['Другое']!;
   }
 
-  // ==================== СКАНЕР ====================
-  void _showScanner() async {
+  // ==================== СКАНЕР ЧЕСТНОГО ЗНАКА ====================
+  void _showHonestSignScanner() async {
     final status = await Permission.camera.request();
     if (!status.isGranted) {
       _showSnack('Нужно разрешение на камеру', AppTheme.warning);
@@ -1055,23 +1130,28 @@ class _HomeScreenState extends State<HomeScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (ctx) => ScannerScreen(
+        builder: (ctx) => HonestSignScannerScreen(
           onScan: (barcode) async {
-            final data = ProductDatabase.findByBarcode(barcode);
-            if (data != null) {
+            // Парсим срок годности из Честного ЗНАКА
+            final expiryDate = HonestSignParser.parseExpiryDate(barcode);
+            
+            if (expiryDate != null) {
+              // Пробуем найти в базе
+              final data = ProductDatabase.findByBarcode(barcode);
               final product = Product(
                 id: DateTime.now().millisecondsSinceEpoch.toString(),
-                name: data['name'],
-                expiryDate: DateTime.now().add(Duration(days: data['defaultDays'])),
-                category: data['category'],
-                iconName: data['icon'],
+                name: data?['name'] ?? 'Продукт',
+                expiryDate: expiryDate,
+                category: data?['category'] ?? 'Другое',
+                iconName: (data?['category'] ?? 'другое').toString().toLowerCase(),
                 addedDate: DateTime.now(),
                 barcode: barcode,
               );
               await _service.add(product);
               _filterProducts();
-              _showSnack('Добавлено: ${data['name']}', AppTheme.success);
+              _showSnack('Добавлено: ${product.name}', AppTheme.success);
             } else {
+              // Если не распарсили срок - ручной ввод
               _showManualAdd(barcode: barcode);
             }
           },
@@ -1125,7 +1205,7 @@ class _HomeScreenState extends State<HomeScreen>
         },
         onExport: () async {
           final json = await _service.exportToJson();
-          await Share.share(json, subject: 'SmartShelf Backup');
+          await Share.share(json, subject: 'СмартПолка Backup');
         },
         onShowAnalytics: () {
           Navigator.pop(ctx);
@@ -1302,33 +1382,30 @@ class _HomeScreenState extends State<HomeScreen>
     return Row(
       children: [
         _buildStatCard(
-          'Всего',
           stats['total'].toString(),
-          Theme.of(context).brightness == Brightness.dark ? Colors.white : const Color(0xFF1E293B),
           Icons.kitchen,
+          Theme.of(context).brightness == Brightness.dark ? Colors.white : const Color(0xFF1E293B),
         ),
         const SizedBox(width: 12),
         _buildStatCard(
-          'Скоро',
           stats['expiringSoon'].toString(),
-          AppTheme.warning,
           Icons.timer,
+          AppTheme.warning,
         ),
         const SizedBox(width: 12),
         _buildStatCard(
-          'Просрочено',
           stats['expired'].toString(),
-          AppTheme.danger,
           Icons.warning,
+          AppTheme.danger,
         ),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, Color color, IconData icon) {
+  Widget _buildStatCard(String value, IconData icon, Color color) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Theme.of(context).cardTheme.color,
           borderRadius: BorderRadius.circular(20),
@@ -1342,6 +1419,7 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               padding: const EdgeInsets.all(10),
@@ -1354,26 +1432,12 @@ class _HomeScreenState extends State<HomeScreen>
               child: Icon(icon, color: color, size: 22),
             ),
             const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: color,
-                    ),
-                  ),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade500,
-                    ),
-                  ),
-                ],
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: color,
               ),
             ),
           ],
@@ -1417,7 +1481,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildCategoryFilter() {
-    final cats = ['Все', ...categories.keys.take(6)];
+    final cats = ['Все', 'Другое', ...categories.keys.take(6)];
     return SizedBox(
       height: 40,
       child: ListView.builder(
@@ -1508,7 +1572,7 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           color: Theme.of(context).cardTheme.color,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: p.statusColor.withOpacity(0.2)),
+          border: Border.all(color: p.statusColor.withOpacity(0.3), width: 2),
           boxShadow: [
             BoxShadow(
               color: p.statusColor.withOpacity(0.1),
@@ -1619,9 +1683,9 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-// ==================== ГОЛОСОВОЙ ВВОД (РЕАЛЬНЫЙ) ====================
+// ==================== ГОЛОСОВОЙ ВВОД С РАЗДЕЛЕНИЕМ ====================
 class VoiceInputSheet extends StatefulWidget {
-  final Function(String name, int days) onResult;
+  final Function(List<Map<String, dynamic>>) onResult;
 
   const VoiceInputSheet({super.key, required this.onResult});
 
@@ -1700,25 +1764,27 @@ class _VoiceInputSheetState extends State<VoiceInputSheet>
   }
 
   void _processResult(String text) {
-    // Парсим: "Молоко 5 дней" или "Молоко на 5 дней" или просто "Молоко"
-    final patterns = [
-      RegExp(r'(.+?)\s+(\d+)\s*дн?\.?(?:ей|я|ь)?$', caseSensitive: false),
-      RegExp(r'(.+?)\s+на\s+(\d+)\s*дн?\.?(?:ей|я|ь)?$', caseSensitive: false),
-      RegExp(r'(.+?)\s+(\d+)$', caseSensitive: false),
-    ];
-
-    for (final pattern in patterns) {
-      final match = pattern.firstMatch(text.trim());
-      if (match != null) {
-        final name = match.group(1)!.trim();
-        final days = int.tryParse(match.group(2)!) ?? 7;
-        widget.onResult(name, days);
-        return;
+    // Парсим несколько продуктов: "Молоко 5 Хлеб 3 Икра 10"
+    final products = <Map<String, dynamic>>[];
+    
+    // Разбиваем по ключевым словам продуктов или по цифрам
+    final pattern = RegExp(r'([а-яА-ЯёЁ\s]+?)\s+(\d+)\s*(?:дн?\.?(?:ей|я|ь)?)?', caseSensitive: false);
+    final matches = pattern.allMatches(text);
+    
+    for (final match in matches) {
+      final name = match.group(1)!.trim();
+      final days = int.tryParse(match.group(2)!) ?? 7;
+      if (name.isNotEmpty) {
+        products.add({'name': name, 'days': days});
       }
     }
-
-    // Если не распарсили - берем как есть с дефолтным сроком
-    widget.onResult(text.trim(), 7);
+    
+    if (products.isEmpty) {
+      // Если не распарсили - берем всё как один продукт с дефолтным сроком
+      products.add({'name': text.trim(), 'days': 7});
+    }
+    
+    widget.onResult(products);
   }
 
   @override
@@ -1813,7 +1879,7 @@ class _VoiceInputSheetState extends State<VoiceInputSheet>
             ),
           const SizedBox(height: 24),
           Text(
-            'Примеры:\n"Молоко 5 дней", "Яйца на 14 дней"',
+            'Примеры:\n"Молоко 5 дней, Хлеб 3 дня, Яйца 14"',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.grey.shade500,
@@ -1834,17 +1900,148 @@ class _VoiceInputSheetState extends State<VoiceInputSheet>
   }
 }
 
-// ==================== СКАНЕР ШТРИХКОДОВ (РЕАЛЬНЫЙ) ====================
-class ScannerScreen extends StatefulWidget {
-  final Function(String barcode) onScan;
+// ==================== ПОДТВЕРЖДЕНИЕ СПИСКА ГОЛОСОВОГО ВВОДА ====================
+class VoiceConfirmSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> products;
+  final Function(List<Map<String, dynamic>>) onConfirm;
+  final VoidCallback onAddMore;
 
-  const ScannerScreen({super.key, required this.onScan});
+  const VoiceConfirmSheet({
+    super.key,
+    required this.products,
+    required this.onConfirm,
+    required this.onAddMore,
+  });
 
   @override
-  State<ScannerScreen> createState() => _ScannerScreenState();
+  State<VoiceConfirmSheet> createState() => _VoiceConfirmSheetState();
 }
 
-class _ScannerScreenState extends State<ScannerScreen> {
+class _VoiceConfirmSheetState extends State<VoiceConfirmSheet> {
+  late List<Map<String, dynamic>> _products;
+
+  @override
+  void initState() {
+    super.initState();
+    _products = List.from(widget.products);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          Container(
+            width: 48,
+            height: 5,
+            decoration: BoxDecoration(
+              color: Colors.grey.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Проверьте список',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${_products.length} продуктов',
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _products.length,
+              itemBuilder: (ctx, i) {
+                final p = _products[i];
+                return ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${p['days']} дн.',
+                      style: TextStyle(
+                        color: AppTheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  title: Text(p['name']),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, color: AppTheme.danger),
+                    onPressed: () {
+                      setState(() => _products.removeAt(i));
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: widget.onAddMore,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Добавить ещё'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: () => widget.onConfirm(_products),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    'ДОБАВИТЬ ВСЁ',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+// ==================== СКАНЕР ЧЕСТНОГО ЗНАКА ====================
+class HonestSignScannerScreen extends StatefulWidget {
+  final Function(String barcode) onScan;
+
+  const HonestSignScannerScreen({super.key, required this.onScan});
+
+  @override
+  State<HonestSignScannerScreen> createState() => _HonestSignScannerScreenState();
+}
+
+class _HonestSignScannerScreenState extends State<HonestSignScannerScreen> {
   bool _isScanning = true;
   String? _lastBarcode;
 
@@ -1888,37 +2085,14 @@ class _ScannerScreenState extends State<ScannerScreen> {
               ),
             ),
           ),
+          // Простой квадратик без символов
           Center(
             child: Container(
-              width: 280,
-              height: 200,
+              width: 250,
+              height: 250,
               decoration: BoxDecoration(
                 border: Border.all(color: AppTheme.primary, width: 2),
                 borderRadius: BorderRadius.circular(20),
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    child: _buildCorner(),
-                  ),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: Transform.rotate(angle: math.pi / 2, child: _buildCorner()),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Transform.rotate(angle: math.pi, child: _buildCorner()),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    child: Transform.rotate(angle: -math.pi / 2, child: _buildCorner()),
-                  ),
-                ],
               ),
             ),
           ),
@@ -1943,7 +2117,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Наведите камеру на штрихкод',
+                  'Наведите на Data Matrix (Честный ЗНАК)',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 16,
@@ -1957,17 +2131,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
       ),
     );
   }
-
-  Widget _buildCorner() => Container(
-    width: 30,
-    height: 30,
-    decoration: const BoxDecoration(
-      border: Border(
-        top: BorderSide(color: AppTheme.primary, width: 4),
-        left: BorderSide(color: AppTheme.primary, width: 4),
-      ),
-    ),
-  );
 }
 
 // ==================== РУЧНОЕ ДОБАВЛЕНИЕ ====================
@@ -1991,7 +2154,13 @@ class _ManualAddSheetState extends State<ManualAddSheet> {
   void initState() {
     super.initState();
     if (widget.barcode != null) {
-      _nameCtrl.text = 'Продукт ${widget.barcode}';
+      // Пробуем распарсить срок из Честного ЗНАКА
+      final expiry = HonestSignParser.parseExpiryDate(widget.barcode!);
+      if (expiry != null) {
+        _selectedDate = expiry;
+        _days = expiry.difference(DateTime.now()).inDays;
+      }
+      _nameCtrl.text = 'Продукт ${widget.barcode!.substring(0, math.min(8, widget.barcode!.length))}';
     }
   }
 
@@ -2383,6 +2552,12 @@ class SettingsSheet extends StatelessWidget {
             AppTheme.secondary,
           ),
           _buildTile(
+            Icons.help_outline,
+            'Гайд по приложению',
+            () => _showGuide(context),
+            AppTheme.info,
+          ),
+          _buildTile(
             Icons.share,
             'Экспорт данных',
             onExport,
@@ -2420,8 +2595,98 @@ class SettingsSheet extends StatelessWidget {
             AppTheme.danger,
           ),
           const SizedBox(height: 20),
+          // PRO версия
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.accent.withOpacity(0.2), AppTheme.accent.withOpacity(0.05)],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.accent.withOpacity(0.3)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.star, color: AppTheme.accent),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PRO версия',
+                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                          ),
+                          Text(
+                            'Глубокая аналитика + скан чеков',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      // Заглушка для PRO версии
+                      Navigator.pop(context);
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('PRO версия'),
+                          content: const Text(
+                            'PRO версия включает:\n\n'
+                            '• Глубокую аналитику расходов\n'
+                            '• Сканирование QR-кодов чеков\n'
+                            '• Экспорт в Excel\n'
+                            '• Безлимитные продукты\n\n'
+                            '149 ₽/месяц\n\n'
+                            'Скоро в Google Play!',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Понятно'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.accent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('149 ₽/мес'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(),
+          const SizedBox(height: 12),
           Text(
-            'SmartShelf v1.0.0',
+            'СмартПолка v1.0.0',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Автор: Nikita Lob',
             style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
           ),
         ],
@@ -2448,6 +2713,153 @@ class SettingsSheet extends StatelessWidget {
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
+      ),
+    );
+  }
+
+  void _showGuide(BuildContext context) {
+    Navigator.pop(context);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(context).size.height * 0.8,
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Container(
+              width: 48,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Гайд по СмартПолке',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView(
+                children: const [
+                  _GuideItem(
+                    icon: Icons.add_circle,
+                    title: 'Добавление продуктов',
+                    description: 'Нажмите кнопку "Добавить" и выберите способ: голосом, сканированием Честного ЗНАКА или вручную.',
+                  ),
+                  _GuideItem(
+                    icon: Icons.mic,
+                    title: 'Голосовой ввод',
+                    description: 'Скажите: "Молоко 5 дней, Хлеб 3 дня". Приложение автоматически разделит продукты.',
+                  ),
+                  _GuideItem(
+                    icon: Icons.qr_code_scanner,
+                    title: 'Сканирование',
+                    description: 'Наведите камеру на Data Matrix код (Честный ЗНАК). Срок годности определится автоматически.',
+                  ),
+                  _GuideItem(
+                    icon: Icons.notifications,
+                    title: 'Уведомления',
+                    description: 'За день до истечения срока вы получите уведомление.',
+                  ),
+                  _GuideItem(
+                    icon: Icons.check_circle,
+                    title: 'Отметка использования',
+                    description: 'Нажмите на продукт, чтобы отметить его использованным.',
+                  ),
+                  _GuideItem(
+                    icon: Icons.swipe,
+                    title: 'Удаление',
+                    description: 'Свайпните продукт влево для удаления.',
+                  ),
+                  _GuideItem(
+                    icon: Icons.analytics,
+                    title: 'Аналитика',
+                    description: 'Смотрите статистику по продуктам в разделе Аналитика.',
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text('Понятно!'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GuideItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+
+  const _GuideItem({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: AppTheme.primary, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
